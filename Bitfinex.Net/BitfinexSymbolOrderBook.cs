@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -11,6 +10,7 @@ using CryptoExchange.Net.Objects;
 using CryptoExchange.Net.OrderBook;
 using CryptoExchange.Net.Sockets;
 using Force.Crc32;
+using Microsoft.Extensions.Logging;
 
 namespace Bitfinex.Net
 {
@@ -21,6 +21,8 @@ namespace Bitfinex.Net
     {
         private readonly IBitfinexSocketClient socketClient;
         private readonly Precision precision;
+        private bool _initial = true;
+        private bool _socketOwner;
 
         /// <summary>
         /// Create a new order book instance
@@ -32,14 +34,18 @@ namespace Bitfinex.Net
         public BitfinexSymbolOrderBook(string symbol, Precision precisionLevel, int limit, BitfinexOrderBookOptions? options = null) : base(symbol, options ?? new BitfinexOrderBookOptions())
         {
             symbol.ValidateBitfinexSymbol();
-            socketClient = options?.SocketClient ?? new BitfinexSocketClient();
+            socketClient = options?.SocketClient ?? new BitfinexSocketClient(new BitfinexSocketClientOptions
+            {
+                LogLevel = options?.LogLevel ?? LogLevel.Information
+            });
+            _socketOwner = options?.SocketClient == null;
 
             Levels = limit;
             precision = precisionLevel;
         }
 
         /// <inheritdoc />
-        protected override async Task<CallResult<UpdateSubscription>> DoStart()
+        protected override async Task<CallResult<UpdateSubscription>> DoStartAsync()
         {
             if(precision == Precision.R0)
                 throw new ArgumentException("Invalid precision: R0");
@@ -51,19 +57,22 @@ namespace Bitfinex.Net
 
             Status = OrderBookStatus.Syncing;
             
-            var setResult = await WaitForSetOrderBook(10000).ConfigureAwait(false);
+            var setResult = await WaitForSetOrderBookAsync(30000).ConfigureAwait(false);
             return setResult ? result : new CallResult<UpdateSubscription>(null, setResult.Error);
         }
 
         /// <inheritdoc />
         protected override void DoReset()
         {
+            _initial = true;
         }
 
-        private void ProcessUpdate(IEnumerable<BitfinexOrderBookEntry> entries)
+        private void ProcessUpdate(DataEvent<IEnumerable<BitfinexOrderBookEntry>> data)
         {
-            if (!bookSet)
+            var entries = data.Data;
+            if (_initial)
             {
+                _initial = false;
                 var askEntries = entries.Where(e => e.Quantity < 0).ToList();
                 var bidEntries = entries.Where(e => e.Quantity > 0).ToList();
                 foreach (var entry in askEntries)
@@ -110,9 +119,9 @@ namespace Bitfinex.Net
         /// Process a received checksum
         /// </summary>
         /// <param name="checksum"></param>
-        protected void ProcessChecksum(int checksum)
+        protected void ProcessChecksum(DataEvent<int> checksum)
         {
-            AddChecksum(checksum);            
+            AddChecksum(checksum.Data);            
         }
 
         /// <summary>
@@ -122,28 +131,36 @@ namespace Bitfinex.Net
         /// <returns></returns>
         protected override bool DoChecksum(int checksum)
         {
+            if (LastSequenceNumber == 0)
+                return true; // No data yet?
+
             var checksumValues = new List<string>();
             for (var i = 0; i < 25; i++)
             {
-                if (bids.Count >= i)
+                if (bids.Count > i)
                 {
                     var bid = (BitfinexOrderBookEntry)bids.ElementAt(i).Value;
                     checksumValues.Add(bid.RawPrice);
                     checksumValues.Add(bid.RawQuantity);
                 }
-                if (asks.Count >= i)
+                else
+                    log.Write(LogLevel.Trace, $"Skipping checksum bid level {i}, no data");
+
+                if (asks.Count > i)
                 {
                     var ask = (BitfinexOrderBookEntry)asks.ElementAt(i).Value;
                     checksumValues.Add(ask.RawPrice);
                     checksumValues.Add(ask.RawQuantity);
                 }
+                else
+                    log.Write(LogLevel.Trace, $"Skipping checksum ask level {i}, no data");
             }
             var checksumString = string.Join(":", checksumValues);
             var ourChecksumUtf = (int)Crc32Algorithm.Compute(Encoding.UTF8.GetBytes(checksumString));
 
             if (ourChecksumUtf != checksum)
             {
-                log.Write(CryptoExchange.Net.Logging.LogVerbosity.Warning, $"Invalid checksum. Received from server: {checksum}, calculated local: {ourChecksumUtf}");
+                log.Write(LogLevel.Warning, $"{Symbol} Invalid checksum. Received from server: {checksum}, calculated local: {ourChecksumUtf}");
                 return false;
             }
             
@@ -151,9 +168,9 @@ namespace Bitfinex.Net
         }
 
         /// <inheritdoc />
-        protected override async Task<CallResult<bool>> DoResync()
+        protected override async Task<CallResult<bool>> DoResyncAsync()
         {
-            return await WaitForSetOrderBook(10000).ConfigureAwait(false);
+            return await WaitForSetOrderBookAsync(30000).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -165,26 +182,8 @@ namespace Bitfinex.Net
             asks.Clear();
             bids.Clear();
 
-            socketClient?.Dispose();
-        }
-
-        // Format the value with the indicated number of significant digits.
-        private string ToSignificantDigits(decimal value)
-        {
-            var stringValue = value.ToString(CultureInfo.InvariantCulture);
-            var stringLength = stringValue.Length;
-            if (stringValue.Contains('.'))
-                stringLength -= 1;
-
-            for (var i = 0;i < 5 - stringLength; i++)
-            {
-                if (!stringValue.Contains('.'))
-                    stringValue += ".0";
-                else
-                    stringValue += "0";
-            }
-
-            return stringValue;
+            if(_socketOwner)
+                socketClient?.Dispose();
         }
     }
 }
