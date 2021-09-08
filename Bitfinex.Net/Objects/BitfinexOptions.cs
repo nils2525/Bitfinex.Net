@@ -13,7 +13,7 @@ namespace Bitfinex.Net.Objects
         /// <summary>
         /// Default affiliate code to use when placing orders
         /// </summary>
-        public string? AffiliateCode { get; set; } = "kCCe-CNBO";
+        public string? AffiliateCode { get; set; } = "rXvzZ1o_p";
 
         /// <summary>
         /// Create new client options
