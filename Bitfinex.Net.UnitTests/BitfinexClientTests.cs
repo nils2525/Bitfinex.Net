@@ -60,7 +60,7 @@ namespace Bitfinex.Net.UnitTests
             var client = TestHelpers.CreateResponseClient(expected);
 
             // act
-            var result = await client.GetTickerAsync(default, "Test");
+            var result = await client.GetTickersAsync(new[] { "Test" }, default);
 
             // assert
             Assert.AreEqual(true, result.Success);
@@ -876,11 +876,11 @@ namespace Bitfinex.Net.UnitTests
 
 
         [Test]
-        public async Task ProvidingApiCredentials_Should_SaveApiCredentials()
+        public void ProvidingApiCredentials_Should_SaveApiCredentials()
         {
             // arrange
             // act
-            var authProvider = new BitfinexAuthenticationProvider(new ApiCredentials("TestKey", "TestSecret"));
+            var authProvider = new BitfinexAuthenticationProvider(new ApiCredentials("TestKey", "TestSecret"), null);
 
             // assert
             Assert.AreEqual(authProvider.Credentials.Key.GetString(), "TestKey");
@@ -888,10 +888,10 @@ namespace Bitfinex.Net.UnitTests
         }
 
         [Test]
-        public async Task SigningString_Should_ReturnCorrectString()
+        public void SigningString_Should_ReturnCorrectString()
         {
             // arrange
-            var authProvider = new BitfinexAuthenticationProvider(new ApiCredentials("TestKey", "TestSecret"));
+            var authProvider = new BitfinexAuthenticationProvider(new ApiCredentials("TestKey", "TestSecret"), null);
 
             // act
             string signed = authProvider.Sign("SomeTestString");
@@ -945,7 +945,7 @@ namespace Bitfinex.Net.UnitTests
         [TestCase("fBTC", true)]
         [TestCase("fNANO", true)]
         [TestCase("fNA", false)]
-        public async Task CheckValidBitfinexSymbol(string symbol, bool isValid)
+        public void CheckValidBitfinexSymbol(string symbol, bool isValid)
         {
             if (isValid)
                 Assert.DoesNotThrow(symbol.ValidateBitfinexSymbol);

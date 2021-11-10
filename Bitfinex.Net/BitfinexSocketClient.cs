@@ -13,6 +13,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Bitfinex.Net.Interfaces;
 using Microsoft.Extensions.Logging;
+using CryptoExchange.Net.Authentication;
+using CryptoExchange.Net.Interfaces;
 
 namespace Bitfinex.Net
 {
@@ -28,23 +30,6 @@ namespace Bitfinex.Net
         private readonly string? _affCode;
 
         private readonly Random random = new Random();
-        private static readonly object nonceLock = new object();
-        private static long lastNonce;
-        internal static string Nonce
-        {
-            get
-            {
-                lock (nonceLock)
-                {
-                    var nonce = (long)Math.Round((DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds * 1000);
-                    if (nonce == lastNonce)
-                        nonce += 1;
-
-                    lastNonce = nonce;
-                    return lastNonce.ToString(CultureInfo.InvariantCulture);
-                }
-            }
-        }
 
         private readonly JsonSerializer _bookSerializer = new JsonSerializer();
         #endregion
@@ -61,7 +46,7 @@ namespace Bitfinex.Net
         /// Create a new instance of BitfinexSocketClient using provided options
         /// </summary>
         /// <param name="options">The options to use for this client</param>
-        public BitfinexSocketClient(BitfinexSocketClientOptions options) : base("Bitfinex", options, options.ApiCredentials == null ? null : new BitfinexAuthenticationProvider(options.ApiCredentials))
+        public BitfinexSocketClient(BitfinexSocketClientOptions options) : base("Bitfinex", options, options.ApiCredentials == null ? null : new BitfinexAuthenticationProvider(options.ApiCredentials, options.NonceProvider))
         {
             if (options == null)
                 throw new ArgumentException("Cant pass null options, use empty constructor for default");
@@ -78,6 +63,17 @@ namespace Bitfinex.Net
         #endregion
 
         #region public methods
+        /// <summary>
+        /// Set the API key and secret
+        /// </summary>
+        /// <param name="apiKey">The api key</param>
+        /// <param name="apiSecret">The api secret</param>
+        /// <param name="nonceProvider">Optional nonce provider for signing requests. Careful providing a custom provider; once a nonce is sent to the server, every request after that needs a higher nonce than that</param>
+        public void SetApiCredentials(string apiKey, string apiSecret, INonceProvider? nonceProvider = null)
+        {
+            SetAuthenticationProvider(new BitfinexAuthenticationProvider(new ApiCredentials(apiKey, apiSecret), nonceProvider));
+        }
+
         /// <summary>
         /// set the default options used when creating a client without specifying options
         /// </summary>
@@ -98,7 +94,7 @@ namespace Bitfinex.Net
             symbol.ValidateBitfinexSymbol();
             var internalHandler = new Action<DataEvent<JToken>>(data =>
             {
-                HandleData("Ticker", (JArray) data.Data[1], symbol, data, handler);
+                HandleData("Ticker", (JArray) data.Data[1]!, symbol, data, handler);
             });
             return await SubscribeAsync(new BitfinexSubscriptionRequest("ticker", symbol), null, false, internalHandler).ConfigureAwait(false);
         }
@@ -122,14 +118,14 @@ namespace Bitfinex.Net
 
             var internalHandler = new Action<DataEvent<JToken>>(data =>
             {
-                if (data.Data[1].ToString() == "cs")
+                if (data.Data[1]?.ToString() == "cs")
                 {
                     // Process
-                    checksumHandler?.Invoke(data.As((int)data.Data[2], symbol));
+                    checksumHandler?.Invoke(data.As(data.Data[2]!.Value<int>(), symbol));
                 }
                 else
                 {
-                    var dataArray = (JArray)data.Data[1];
+                    var dataArray = (JArray)data.Data[1]!;
                     if (dataArray.Count == 0)
                         // Empty array
                         return;
@@ -159,17 +155,26 @@ namespace Bitfinex.Net
         /// <param name="symbol">The symbol to subscribe to</param>
         /// <param name="limit">The range for the order book updates</param>
         /// <param name="handler">The handler for the data</param>
+        /// <param name="checksumHandler">The handler for the checksum, can be used to validate a order book implementation</param>
         /// <returns></returns>
-        public async Task<CallResult<UpdateSubscription>> SubscribeToRawBookUpdatesAsync(string symbol, int limit, Action<DataEvent<IEnumerable<BitfinexRawOrderBookEntry>>> handler)
+        public async Task<CallResult<UpdateSubscription>> SubscribeToRawBookUpdatesAsync(string symbol, int limit, Action<DataEvent<IEnumerable<BitfinexRawOrderBookEntry>>> handler, Action<DataEvent<int>>? checksumHandler = null)
         {
             symbol.ValidateBitfinexSymbol();
             var internalHandler = new Action<DataEvent<JToken>>(data =>
             {
-                var dataArray = (JArray)data.Data[1];
-                if (dataArray[0].Type == JTokenType.Array)
-                    HandleData("Raw book snapshot", dataArray, symbol, data, handler);
+                if (data.Data[1]?.ToString() == "cs")
+                {
+                    // Process
+                    checksumHandler?.Invoke(data.As(data.Data[2]!.Value<int>(), symbol));
+                }
                 else
-                    HandleSingleToArrayData("Raw book update", dataArray, symbol, data, handler);
+                {
+                    var dataArray = (JArray)data.Data[1]!;
+                    if (dataArray[0].Type == JTokenType.Array)
+                        HandleData("Raw book snapshot", dataArray, symbol, data, handler);
+                    else
+                        HandleSingleToArrayData("Raw book update", dataArray, symbol, data, handler);
+                }
             });
             return await SubscribeAsync(new BitfinexRawBookSubscriptionRequest(symbol, "R0", limit), null, false, internalHandler).ConfigureAwait(false);
         }
@@ -197,7 +202,7 @@ namespace Bitfinex.Net
                         log.Write(LogLevel.Warning, "Failed to deserialize trade object: " + desResult.Error);
                         return;
                     }
-                    desResult.Data.UpdateType = BitfinexEvents.EventMapping[(string)arr[1]];
+                    desResult.Data.UpdateType = BitfinexEvents.EventMapping[arr[1].ToString()];
                     handler(data.As<IEnumerable<BitfinexTradeSimple>>(new[] { desResult.Data }, symbol));
                 }
             });
@@ -216,7 +221,7 @@ namespace Bitfinex.Net
             symbol.ValidateBitfinexSymbol();
             var internalHandler = new Action<DataEvent<JToken>>(data =>
             {
-                var dataArray = (JArray)data.Data[1];
+                var dataArray = (JArray)data.Data[1]!;
                 if (dataArray.Count == 0)
                 {
                     log.Write(LogLevel.Warning, "No data in kline update, check if the symbol is correct");
@@ -487,7 +492,11 @@ namespace Bitfinex.Net
         
         private void HandleAuthUpdate<T>(DataEvent<JToken> token, Action<DataEvent<BitfinexSocketEvent<IEnumerable<T>>>> action, string category)
         {
-            var evntType = BitfinexEvents.EventMapping[(string)token.Data[1]];
+            var evntStr = token.Data[1]?.ToString();
+            if (evntStr == null)
+                return;
+
+            var evntType = BitfinexEvents.EventMapping[evntStr];
             var evnt = BitfinexEvents.Events.Single(e => e.EventType == evntType);
             if (evnt.Category != category)
                 return;
@@ -501,7 +510,7 @@ namespace Bitfinex.Net
             IEnumerable<T> data;
             if (evnt.Single)
             {
-                var result = Deserialize<T>(token.Data[2]);
+                var result = Deserialize<T>(token.Data[2]!);
                 if (!result)
                 {
                     log.Write(LogLevel.Warning, "Failed to deserialize data: " + result.Error);
@@ -511,7 +520,7 @@ namespace Bitfinex.Net
             }
             else
             {
-                var result = Deserialize<IEnumerable<T>>(token.Data[2]);
+                var result = Deserialize<IEnumerable<T>>(token.Data[2]!);
                 if (!result)
                 {
                     log.Write(LogLevel.Warning, "Failed to deserialize data: " + result.Error);
@@ -525,7 +534,7 @@ namespace Bitfinex.Net
 
         private void ConfHandler(MessageEvent messageEvent)
         {
-            var confEvent = messageEvent.JsonData.Type == JTokenType.Object && (string)messageEvent.JsonData["event"] == "conf";
+            var confEvent = messageEvent.JsonData.Type == JTokenType.Object && messageEvent.JsonData["event"]?.ToString() == "conf";
             if (!confEvent)
                 return;
 
@@ -534,7 +543,7 @@ namespace Bitfinex.Net
 
         private void InfoHandler(MessageEvent messageEvent)
         {
-            var infoEvent = messageEvent.JsonData.Type == JTokenType.Object && (string)messageEvent.JsonData["event"] == "info";
+            var infoEvent = messageEvent.JsonData.Type == JTokenType.Object && messageEvent.JsonData["event"]?.ToString() == "info";
             if (!infoEvent)
                 return;
 
@@ -546,7 +555,7 @@ namespace Bitfinex.Net
                 return;
             }
 
-            var code = (int)messageEvent.JsonData["code"];
+            var code = messageEvent.JsonData["code"]?.Value<int>();
             switch (code)
             {
                 case 20051:
@@ -586,8 +595,11 @@ namespace Bitfinex.Net
                 if (data.Type != JTokenType.Object)
                     return false;
 
-                var evnt = (string)data["event"];
-                var channel = (string)data["chanId"];
+                var evnt = data["event"]?.ToString();
+                var channel = data["chanId"]?.ToString();
+                if (evnt == null || channel == null)
+                    return false;
+
                 if (!int.TryParse(channel, out var chan))
                     return false;
 
@@ -599,7 +611,7 @@ namespace Bitfinex.Net
 
         private BitfinexAuthentication GetAuthObject(params string[] filter)
         {
-            var n = Nonce;
+            var n = ((BitfinexAuthenticationProvider)authProvider!).GetNonce().ToString();
             var authentication = new BitfinexAuthentication
             {
                 Event = "auth",
@@ -634,7 +646,7 @@ namespace Bitfinex.Net
                 if (tokenData.Type != JTokenType.Object)
                     return false;
 
-                if ((string) tokenData["event"] != "auth")
+                if (tokenData["event"]?.ToString() != "auth")
                     return false;
 
                 var authResponse = Deserialize<BitfinexAuthenticationResponse>(tokenData, false);
@@ -675,12 +687,12 @@ namespace Bitfinex.Net
                 return false;
 
             var bfRequest = (BitfinexSocketQuery)request;
-            var eventType = BitfinexEvents.EventMapping[(string)data[1]];
+            var eventType = BitfinexEvents.EventMapping[data[1]!.ToString()];
 
             if (eventType == BitfinexEventType.Notification)
             {
-                var notificationData = (JArray) data[2];
-                var notificationType = BitfinexEvents.EventMapping[(string) notificationData[1]];
+                var notificationData = (JArray) data[2]!;
+                var notificationType = BitfinexEvents.EventMapping[notificationData[1].ToString()];
                 if (notificationType != BitfinexEventType.OrderNewRequest
                     && notificationType != BitfinexEventType.OrderCancelRequest
                     && notificationType != BitfinexEventType.OrderUpdateRequest
@@ -689,26 +701,26 @@ namespace Bitfinex.Net
                     return false;
                 }
 
-                var statusString = ((string)notificationData[6]).ToLower(CultureInfo.InvariantCulture);
+                var statusString = (notificationData[6].ToString()).ToLower(CultureInfo.InvariantCulture);
                 if (statusString == "error")
                 {
                     if (bfRequest.QueryType == BitfinexEventType.OrderNew && notificationType == BitfinexEventType.OrderNewRequest)
                     {
                         var orderData = notificationData[4];
-                        if ((string) orderData[2] != bfRequest.Id)
+                        if (orderData[2]?.ToString() != bfRequest.Id)
                             return false;
 
-                        callResult = new CallResult<T>(default, new ServerError((string)notificationData[7]));
+                        callResult = new CallResult<T>(default, new ServerError(notificationData[7].ToString()));
                         return true;
                     }
 
                     if (bfRequest.QueryType == BitfinexEventType.OrderCancel && notificationType == BitfinexEventType.OrderCancelRequest)
                     {
                         var orderData = notificationData[4];
-                        if ((string) orderData[0] != bfRequest.Id)
+                        if (orderData[0]?.ToString() != bfRequest.Id)
                             return false;
 
-                        callResult = new CallResult<T>(default, new ServerError((string)notificationData[7]));
+                        callResult = new CallResult<T>(default, new ServerError(notificationData[7].ToString()));
                         return true;
                     }
 
@@ -717,13 +729,13 @@ namespace Bitfinex.Net
                         // OrderUpdateRequest not found notification doesn't carry the order id, where as OrderCancelRequest not found notification does..
                         // Anyway, can't check for ids, so just assume its for this one
 
-                        callResult = new CallResult<T>(default, new ServerError((string)notificationData[7]));
+                        callResult = new CallResult<T>(default, new ServerError(notificationData[7].ToString()));
                         return true;
                     }
 
                     if (bfRequest.QueryType == BitfinexEventType.OrderCancelMulti && notificationType == BitfinexEventType.OrderCancelMultiRequest)
                     {
-                        callResult = new CallResult<T>(default, new ServerError((string)notificationData[7]));
+                        callResult = new CallResult<T>(default, new ServerError(notificationData[7].ToString()));
                         return true;
                     }
                 }
@@ -737,8 +749,8 @@ namespace Bitfinex.Net
                     || bfRequest.QueryType == BitfinexEventType.OrderCancel)
                     {
                         var orderData = notificationData[4];
-                        var dataOrderId = orderData[0].ToString();
-                        var dataOrderClientId = orderData[2].ToString();
+                        var dataOrderId = orderData[0]?.ToString();
+                        var dataOrderClientId = orderData[2]?.ToString();
                         if (dataOrderId == bfRequest.Id || dataOrderClientId == bfRequest.Id)
                         {
                             var desResult = Deserialize<T>(orderData);
@@ -777,8 +789,8 @@ namespace Bitfinex.Net
             if (data.Type != JTokenType.Object)
                 return false;
 
-            var infoEvent = (string)data["event"] == "subscribed";
-            var errorEvent = (string)data["event"] == "error";
+            var infoEvent = data["event"]?.ToString() == "subscribed";
+            var errorEvent = data["event"]?.ToString() == "error";
             if (!infoEvent && !errorEvent)
                 return false;
 
@@ -843,9 +855,9 @@ namespace Bitfinex.Net
             if (message.Type == JTokenType.Object)
             {
                 if (identifier == "Info")
-                    return (string)message["event"] == "info";
+                    return message["event"]?.ToString() == "info";
                 if (identifier == "Conf")
-                    return (string)message["event"] == "conf";
+                    return message["event"]?.ToString() == "conf";
             }
 
             else if (message.Type == JTokenType.Array)
@@ -867,7 +879,7 @@ namespace Bitfinex.Net
                 foreach (var id in split)
                 {
                     var events = BitfinexEvents.GetEventsForCategory(id);
-                    var eventTypeString = (string) array[1];
+                    var eventTypeString = array[1].ToString();
                     var eventType = BitfinexEvents.EventMapping[eventTypeString];
                     var evnt = events.SingleOrDefault(e => e.EventType == eventType);
                     if (evnt != null)

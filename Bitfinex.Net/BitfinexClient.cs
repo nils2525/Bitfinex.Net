@@ -16,6 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Bitfinex.Net.Interfaces;
 using CryptoExchange.Net.ExchangeInterfaces;
+using CryptoExchange.Net.Interfaces;
 
 namespace Bitfinex.Net
 {
@@ -129,7 +130,7 @@ namespace Bitfinex.Net
         /// Create a new instance of BitfinexClient using provided options
         /// </summary>
         /// <param name="options">The options to use for this client</param>
-        public BitfinexClient(BitfinexClientOptions options) : base("Bitfinex", options, options.ApiCredentials == null ? null : new BitfinexAuthenticationProvider(options.ApiCredentials))
+        public BitfinexClient(BitfinexClientOptions options) : base("Bitfinex", options, options.ApiCredentials == null ? null : new BitfinexAuthenticationProvider(options.ApiCredentials, options.NonceProvider))
         {
             if (options == null)
                 throw new ArgumentException("Cant pass null options, use empty constructor for default");
@@ -153,9 +154,10 @@ namespace Bitfinex.Net
         /// </summary>
         /// <param name="apiKey">The api key</param>
         /// <param name="apiSecret">The api secret</param>
-        public void SetApiCredentials(string apiKey, string apiSecret)
+        /// <param name="nonceProvider">Optional nonce provider for signing requests. Careful providing a custom provider; once a nonce is sent to the server, every request after that needs a higher nonce than that</param>
+        public void SetApiCredentials(string apiKey, string apiSecret, INonceProvider? nonceProvider = null)
         {
-            SetAuthenticationProvider(new BitfinexAuthenticationProvider(new ApiCredentials(apiKey, apiSecret)));
+            SetAuthenticationProvider(new BitfinexAuthenticationProvider(new ApiCredentials(apiKey, apiSecret), nonceProvider));
         }
 
         #region Version2
@@ -185,14 +187,23 @@ namespace Bitfinex.Net
         /// <summary>
         /// Returns basic market data for the provided symbols
         /// </summary>
+        /// <param name="symbol">The symbol to get data for</param>
+        /// <param name="ct">Cancellation token</param>
+        /// <returns>Symbol data</returns>
+        public Task<WebCallResult<IEnumerable<BitfinexSymbolOverview>>> GetTickerAsync(string symbol, CancellationToken ct = default)
+            => GetTickersAsync(new[] { symbol }, ct);
+
+        /// <summary>
+        /// Returns basic market data for the provided symbols
+        /// </summary>
         /// <param name="symbols">The symbols to get data for</param>
         /// <param name="ct">Cancellation token</param>
         /// <returns>Symbol data</returns>
-        public async Task<WebCallResult<IEnumerable<BitfinexSymbolOverview>>> GetTickerAsync(CancellationToken ct = default, params string[] symbols)
+        public async Task<WebCallResult<IEnumerable<BitfinexSymbolOverview>>> GetTickersAsync(IEnumerable<string>? symbols = null, CancellationToken ct = default)
         {
             var parameters = new Dictionary<string, object>
             {
-                {"symbols", symbols.Any() ? string.Join(",", symbols): "ALL"}
+                {"symbols", symbols?.Any() == true ? string.Join(",", symbols): "ALL"}
             };
 
             return await SendRequestAsync<IEnumerable<BitfinexSymbolOverview>>(GetUrl(TickersEndpoint, ApiVersion2), HttpMethod.Get, ct, parameters).ConfigureAwait(false);
@@ -946,7 +957,7 @@ namespace Bitfinex.Net
                 Data = orderData
             };
 
-            OnOrderPlaced?.Invoke(orderData);
+            OnOrderPlaced?.Invoke(orderData!);
             return result.As(output);
         }
         #endregion
@@ -1060,7 +1071,7 @@ namespace Bitfinex.Net
 
             var result = await SendRequestAsync<BitfinexWriteResult<BitfinexOrder>>(GetUrl(CancelOrderEndpoint, ApiVersion2), HttpMethod.Post, ct, parameters, true).ConfigureAwait(false);
             if(result)
-                OnOrderCanceled?.Invoke(result.Data.Data);
+                OnOrderCanceled?.Invoke(result.Data.Data!);
             return result;
         }
 
@@ -1131,7 +1142,7 @@ namespace Bitfinex.Net
             };
             var result =  await SendRequestAsync<BitfinexTransferResult[]>(GetUrl(TransferEndpoint, ApiVersion1), HttpMethod.Post, ct, parameters, true).ConfigureAwait(false);
             if (!result)
-                return result.As((BitfinexTransferResult)null);
+                return result.As((BitfinexTransferResult)null!);
             
             return result.As(result.Data.First());
         }
@@ -1332,6 +1343,7 @@ namespace Bitfinex.Net
         #endregion
 
         #region common interface
+#pragma warning disable 1066
         async Task<WebCallResult<IEnumerable<ICommonSymbol>>> IExchangeClient.GetSymbolsAsync()
         {
             var symbols = await GetSymbolDetailsAsync().ConfigureAwait(false);
@@ -1340,13 +1352,13 @@ namespace Bitfinex.Net
 
         async Task<WebCallResult<ICommonTicker>> IExchangeClient.GetTickerAsync(string symbol)
         {
-            var tickersResult = await GetTickerAsync(default, symbol).ConfigureAwait(false);
+            var tickersResult = await GetTickerAsync(symbol).ConfigureAwait(false);
             return tickersResult.As<ICommonTicker>(tickersResult.Data?.FirstOrDefault());
         }
 
         async Task<WebCallResult<IEnumerable<ICommonTicker>>> IExchangeClient.GetTickersAsync()
         {
-            var tickersResult = await GetTickerAsync().ConfigureAwait(false);
+            var tickersResult = await GetTickersAsync().ConfigureAwait(false);
             return tickersResult.As<IEnumerable<ICommonTicker>>(tickersResult.Data);
         }
 
@@ -1422,6 +1434,7 @@ namespace Bitfinex.Net
             var result = await GetBalancesAsync().ConfigureAwait(false);
             return result.As<IEnumerable<ICommonBalance>>(result.Data.Where(d => d.Type == WalletType.Exchange));
         }
+#pragma warning restore 1066
 
         /// <summary>
         /// Get the name of a symbol for Bitfinex based on the base and quote asset
@@ -1453,7 +1466,7 @@ namespace Bitfinex.Net
             }
 
             var error = data.ToObject<BitfinexError>();
-            return new ServerError(error.ErrorCode, error.ErrorMessage);
+            return new ServerError(error!.ErrorCode, error.ErrorMessage);
 
         }
 

@@ -5,8 +5,10 @@ using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using Bitfinex.Net.Objects;
 using CryptoExchange.Net;
 using CryptoExchange.Net.Authentication;
+using CryptoExchange.Net.Interfaces;
 using CryptoExchange.Net.Objects;
 using Newtonsoft.Json;
 
@@ -14,19 +16,23 @@ namespace Bitfinex.Net
 {
     internal class BitfinexAuthenticationProvider: AuthenticationProvider
     {
+        private readonly INonceProvider _nonceProvider;
         private readonly HMACSHA384 encryptor;
         private readonly object locker;
 
-        public BitfinexAuthenticationProvider(ApiCredentials credentials) : base(credentials)
+        public long GetNonce() => _nonceProvider.GetNonce();
+
+        public BitfinexAuthenticationProvider(ApiCredentials credentials, INonceProvider? nonceProvider) : base(credentials)
         {
             if (credentials.Secret == null)
                 throw new ArgumentException("ApiKey/Secret needed");
 
+            _nonceProvider = nonceProvider ?? new BitfinexNonceProvider();
             locker = new object();
             encryptor = new HMACSHA384(Encoding.UTF8.GetBytes(credentials.Secret.GetString()));
         }
 
-        public override Dictionary<string, string> AddAuthenticationToHeaders(string uri, HttpMethod method, Dictionary<string, object> parameters, bool signed, PostParameters postParameterPosition, ArrayParametersSerialization arraySerialization)
+        public override Dictionary<string, string> AddAuthenticationToHeaders(string uri, HttpMethod method, Dictionary<string, object> parameters, bool signed, HttpMethodParameterPosition parameterPosition, ArrayParametersSerialization arraySerialization)
         {
             if(Credentials.Key == null)
                 throw new ArgumentException("ApiKey/Secret needed");
@@ -49,7 +55,7 @@ namespace Bitfinex.Net
             else if (uri.Contains("v2"))
             {
                 var json = JsonConvert.SerializeObject(parameters.OrderBy(p => p.Key).ToDictionary(p => p.Key, p => p.Value));
-                var n = BitfinexSocketClient.Nonce;
+                var n = _nonceProvider.GetNonce().ToString();
                 var signature = $"/api{uri.Split(new[] { ".com" }, StringSplitOptions.None)[1]}{n}{json}";
                 var signedData = Sign(signature);
 
@@ -61,7 +67,7 @@ namespace Bitfinex.Net
             return result;
         }
 
-        public override Dictionary<string, object> AddAuthenticationToParameters(string uri, HttpMethod method, Dictionary<string, object> parameters, bool signed, PostParameters postParameterPosition, ArrayParametersSerialization arraySerialization)
+        public override Dictionary<string, object> AddAuthenticationToParameters(string uri, HttpMethod method, Dictionary<string, object> parameters, bool signed, HttpMethodParameterPosition parameterPosition, ArrayParametersSerialization arraySerialization)
         {
             if (!signed)
                 return parameters;
@@ -69,7 +75,7 @@ namespace Bitfinex.Net
             if (uri.Contains("v1"))
             {
                 parameters.Add("request", uri.Split(new[] { ".com" }, StringSplitOptions.None)[1]);
-                parameters.Add("nonce", BitfinexSocketClient.Nonce);
+                parameters.Add("nonce", _nonceProvider.GetNonce().ToString());
             }
             else if (uri.Contains("v2"))
             {

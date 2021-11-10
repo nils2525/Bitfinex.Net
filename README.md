@@ -8,12 +8,14 @@ Bitfinex.Net is a wrapper around the Bitfinex API as described on [Bitfinex](htt
 ## CryptoExchange.Net
 This library is build upon the CryptoExchange.Net library, make sure to check out the documentation on that for basic usage: [docs](https://github.com/JKorf/CryptoExchange.Net)
 
-## Donations
+## Donate / Sponsor
 I develop and maintain this package on my own for free in my spare time. Donations are greatly appreciated. If you prefer to donate any other currency please contact me.
 
 **Btc**:  12KwZk3r2Y3JZ2uMULcjqqBvXmpDwjhhQS  
 **Eth**:  0x069176ca1a4b1d6e0b7901a6bc0dbf3bb0bf5cc2  
 **Nano**: xrb_1ocs3hbp561ef76eoctjwg85w5ugr8wgimkj8mfhoyqbx4s1pbc74zggw7gs  
+
+Alternatively, sponsor me on Github using [Github Sponsors](https://github.com/sponsors/JKorf)  
 
 ## Discord
 A Discord server is available [here](https://discord.gg/MSpeEtSY8t). Feel free to join for discussion and/or questions around the CryptoExchange.Net and implementation libraries.
@@ -90,6 +92,34 @@ For the basic client options see also the CryptoExchange.Net [docs](https://gith
 |`AffiliateCode`|The affiliate code to use for requests|kCCe-CNBO
 
 ## Release notes
+* Version 4.2.4 - 03 Nov 2021
+    * Fixed raw order book stream not accounting for checksum updates
+
+* Version 4.2.3 - 08 Oct 2021
+    * Updated CryptoExchange.Net to fix some socket issues
+
+* Version 4.2.2 - 06 Oct 2021
+    * Updated CryptoExchange.Net, fixing socket issue when calling from .Net Framework
+
+* Version 4.2.1 - 05 Oct 2021
+    * Updated CryptoExchange.Net
+
+* Version 4.2.0 - 29 Sep 2021
+    * Split GetTickerAsync in GetTickerAsync and GetTickersAsync, changed `params` to `IEnumerable`
+    * Updated CryptoExchange.Net
+
+* Version 4.1.2 - 22 Sep 2021
+    * Fixed nonce provider when running multiple program instances
+
+* Version 4.1.1 - 21 Sep 2021
+    * Fix for nonce provider not working correctly in combination with other exchanges
+
+* Version 4.1.0 - 20 Sep 2021
+    * Added custom nonce provider support
+
+* Version 4.0.5 - 15 Sep 2021
+    * Updated CryptoExchange.Net
+
 * Version 4.0.4 - 02 Sep 2021
     * Fix for disposing order book closing socket even if there are other connections
 

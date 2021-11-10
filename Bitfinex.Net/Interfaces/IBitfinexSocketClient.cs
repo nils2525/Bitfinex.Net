@@ -15,6 +15,14 @@ namespace Bitfinex.Net.Interfaces
     public interface IBitfinexSocketClient: ISocketClient
     {
         /// <summary>
+        /// Set the API key and secret
+        /// </summary>
+        /// <param name="apiKey">The api key</param>
+        /// <param name="apiSecret">The api secret</param>
+        /// <param name="nonceProvider">Optional nonce provider for signing requests. Careful providing a custom provider; once a nonce is sent to the server, every request after that needs a higher nonce than that</param>
+        void SetApiCredentials(string apiKey, string apiSecret, INonceProvider? nonceProvider = null);
+
+        /// <summary>
         /// Subscribes to ticker updates for a symbol
         /// </summary>
         /// <param name="symbol">The symbol to subscribe to</param>
@@ -40,8 +48,9 @@ namespace Bitfinex.Net.Interfaces
         /// <param name="symbol">The symbol to subscribe to</param>
         /// <param name="limit">The range for the order book updates</param>
         /// <param name="handler">The handler for the data</param>
+        /// <param name="checksumHandler">The handler for the checksum, can be used to validate a order book implementation</param>
         /// <returns></returns>
-        Task<CallResult<UpdateSubscription>> SubscribeToRawBookUpdatesAsync(string symbol, int limit, Action<DataEvent<IEnumerable<BitfinexRawOrderBookEntry>>> handler);
+        Task<CallResult<UpdateSubscription>> SubscribeToRawBookUpdatesAsync(string symbol, int limit, Action<DataEvent<IEnumerable<BitfinexRawOrderBookEntry>>> handler, Action<DataEvent<int>>? checksumHandler = null);
 
         /// <summary>
         /// Subscribes to public trade updates for a symbol
