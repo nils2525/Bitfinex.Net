@@ -1,5 +1,5 @@
 # Bitfinex.Net
-![Build status](https://travis-ci.com/JKorf/Bitfinex.Net.svg?branch=master) ![Nuget version](https://img.shields.io/nuget/v/bitfinex.net.svg)  ![Nuget downloads](https://img.shields.io/nuget/dt/Bitfinex.Net.svg)
+[![.NET](https://github.com/JKorf/Bitfinex.Net/actions/workflows/dotnet.yml/badge.svg)](https://github.com/JKorf/Bitfinex.Net/actions/workflows/dotnet.yml) ![Nuget version](https://img.shields.io/nuget/v/bitfinex.net.svg)  ![Nuget downloads](https://img.shields.io/nuget/dt/Bitfinex.Net.svg)
 
 Bitfinex.Net is a wrapper around the Bitfinex API as described on [Bitfinex](https://docs.bitfinex.com/docs), including all features the API provides using clear and readable objects, both for the REST  as the websocket API's.
 
@@ -20,6 +20,47 @@ Alternatively, sponsor me on Github using [Github Sponsors](https://github.com/s
 A Discord server is available [here](https://discord.gg/MSpeEtSY8t). Feel free to join for discussion and/or questions around the CryptoExchange.Net and implementation libraries.
 
 ## Release notes
+* Version 5.0.12 - 12 Jun 2022
+    * Updated CryptoExchange.Net
+
+* Version 5.0.11 - 24 May 2022
+    * Updated CryptoExchange.Net
+
+* Version 5.0.10 - 22 May 2022
+    * Updated CryptoExchange.Net
+
+* Version 5.0.9 - 08 May 2022
+    * Updated CryptoExchange.Net
+
+* Version 5.0.8 - 01 May 2022
+    * Updated CryptoExchange.Net which fixed an timing related issue in the websocket reconnection logic
+    * Added seconds representation to KlineInterval enum
+    * Added allowed order book levels 1 and 250
+
+* Version 5.0.7 - 14 Apr 2022
+    * Fixed deserialization error in ClosePositionAsync
+    * Fixed WalletTransferAsync serialization issue
+    * Updated CryptoExchange.Net
+
+* Version 5.0.6 - 14 Mar 2022
+    * Added SubmitFundingAutoRenewAsync endpoint
+    * Added GetFundingAutoRenewStatusAsync endpoint
+
+* Version 5.0.5 - 10 Mar 2022
+    * Updated CryptoExchange.Net
+
+* Version 5.0.4 - 08 Mar 2022
+    * Updated CryptoExchange.Net
+
+* Version 5.0.3 - 01 Mar 2022
+    * Updated CryptoExchange.Net improving the websocket reconnection robustness
+
+* Version 5.0.2 - 27 Feb 2022
+    * Updated CryptoExchange.Net
+
+* Version 5.0.1 - 24 Feb 2022
+    * Updated CryptoExchange.Net
+
 * Version 5.0.0 - 18 Feb 2022
     * Added Github.io page for documentation: https://jkorf.github.io/Bitfinex.Net/
     * Added unit tests for parsing the returned JSON for each endpoint and subscription

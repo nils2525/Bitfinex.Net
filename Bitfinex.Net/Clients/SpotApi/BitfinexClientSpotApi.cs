@@ -35,7 +35,7 @@ namespace Bitfinex.Net.Clients.SpotApi
         internal static SemaphoreSlim SemaphoreSlim = new SemaphoreSlim(1, 1);
         internal static DateTime LastTimeSync;
 
-        internal static TimeSyncState TimeSyncState = new TimeSyncState();
+        internal static TimeSyncState TimeSyncState = new TimeSyncState("Api");
         #endregion
 
         /// <inheritdoc />
@@ -154,8 +154,8 @@ namespace Bitfinex.Net.Clients.SpotApi
             => Task.FromResult(new WebCallResult<DateTime>(null, null, null, null, null, null, null, null, DateTime.UtcNow, null));
 
         /// <inheritdoc />
-        protected override TimeSyncInfo GetTimeSyncInfo()
-            => new TimeSyncInfo(_log, _options.SpotApiOptions.AutoTimestamp, TimeSyncState);
+        public override TimeSyncInfo GetTimeSyncInfo()
+            => new TimeSyncInfo(_log, _options.SpotApiOptions.AutoTimestamp, _options.SpotApiOptions.TimestampRecalculationInterval, TimeSyncState);
 
         /// <inheritdoc />
         public override TimeSpan GetTimeOffset()
