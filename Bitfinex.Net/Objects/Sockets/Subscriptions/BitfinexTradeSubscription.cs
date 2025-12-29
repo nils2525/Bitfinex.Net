@@ -38,9 +38,13 @@ namespace Bitfinex.Net.Objects.Sockets.Subscriptions
 
         public override void HandleSubQueryResponse(object? message)
         {
-            var data = (BitfinexResponse?)message;
+            if (message is not BitfinexResponse data)
+                return;
 
-            _channelId = data!.ChannelId!.Value;
+            if (data.ChannelId == null)
+                return;
+
+            _channelId = data.ChannelId.Value;
             _firstUpdate = true;
 
             MessageRouter = MessageRouter.Create([
