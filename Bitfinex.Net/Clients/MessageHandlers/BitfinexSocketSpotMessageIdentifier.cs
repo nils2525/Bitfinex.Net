@@ -38,12 +38,7 @@ namespace Bitfinex.Net.Clients.MessageHandlers
                 }
                 else
                 {
-                    var nestedElement = document.RootElement[1];
-                    var length = nestedElement.GetArrayLength();
-                    if (length == 0)
-                        return "single";
-
-                    var nodeTypeData = nestedElement[0].ValueKind;
+                    var nodeTypeData = document.RootElement[1][0].ValueKind;
                     return nodeTypeData == JsonValueKind.Array ? id + "array" : id + "single";
                 }
             }
