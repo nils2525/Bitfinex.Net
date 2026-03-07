@@ -1,6 +1,6 @@
-﻿using CryptoExchange.Net.Converters.SystemTextJson.MessageHandlers;
-using System;
+﻿using System;
 using System.Text.Json;
+using CryptoExchange.Net.Converters.SystemTextJson.MessageHandlers;
 
 namespace Bitfinex.Net.Clients.MessageHandlers
 {
@@ -38,7 +38,12 @@ namespace Bitfinex.Net.Clients.MessageHandlers
                 }
                 else
                 {
-                    var nodeTypeData = document.RootElement[1][0].ValueKind;
+                    var nestedElement = document.RootElement[1];
+                    var length = nestedElement.GetArrayLength();
+                    if (length == 0)
+                        return "single";
+
+                    var nodeTypeData = nestedElement[0].ValueKind;
                     return nodeTypeData == JsonValueKind.Array ? id + "array" : id + "single";
                 }
             }
